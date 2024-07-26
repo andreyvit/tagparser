@@ -1,11 +1,67 @@
-A better, simpler parser of conventional Go struct field tags
-=============================================================
+A better, simpler parser of conventional Go struct tags
+=======================================================
 
-[![Go reference](https://pkg.go.dev/badge/github.com/andreyvit/tagparser.svg)](https://pkg.go.dev/github.com/andreyvit/tagparser) ![Zero dependencies](https://img.shields.io/badge/deps-zero-brightgreen) ![Zero magic](https://img.shields.io/badge/magic-none-brightgreen) ![250 LOC](https://img.shields.io/badge/size-250%20LOC-green) ![100% coverage](https://img.shields.io/badge/coverage-100%25-green) [![Go Report Card](https://goreportcard.com/badge/github.com/andreyvit/tagparser)](https://goreportcard.com/report/github.com/andreyvit/tagparser)
+[![Go reference](https://pkg.go.dev/badge/github.com/andreyvit/tagparser.svg)](https://pkg.go.dev/github.com/andreyvit/tagparser) ![Zero dependencies](https://img.shields.io/badge/deps-zero-brightgreen) ![Zero magic](https://img.shields.io/badge/magic-none-brightgreen) ![200 LOC](https://img.shields.io/badge/size-200%20LOC-green) ![100% coverage](https://img.shields.io/badge/coverage-100%25-green) [![Go Report Card](https://goreportcard.com/badge/github.com/andreyvit/tagparser)](https://goreportcard.com/report/github.com/andreyvit/tagparser)
 
 This package parses conventional formats of struct field tags: `name,key1,key2:value2,key3,key4=value4`.
 
-It's an alternative to the industry-standard [vmihailenco/tagparser](https://github.com/vmihailenco/tagparser) with a more compact implementation, simpler and better API, optional error reporting, and an optionally 100% backwards compatible tag syntax.
+It's an alternative to the industry-standard [vmihailenco/tagparser](https://github.com/vmihailenco/tagparser) with a simpler implementation, optional error reporting, and saner compatible tag syntax.
+
+
+Usage
+-----
+
+Install:
+
+    go get github.com/andreyvit/tagparser@latest
+
+Use `ParseName` for tags that treat the first item as a name:
+
+```go
+name, opts, err := tagparser.ParseName(`foo,bar,boz:fubar`)
+// name == "foo"
+// opts == map[string]string{"bar": "", "boz": "fubar"}
+```
+
+Use `Parse` for tags that don't need names:
+
+```go
+opts, err := tagparser.Parse(`foo,bar,boz:fubar`)
+// opts == map[string]string{"foo": "", "bar": "", "boz": "fubar"}
+```
+
+Use `ParseFunc` or `ParseNameFunc` for customized usage, zero allocations and even better error reporting:
+
+```go
+callback := func(key, value string) error {
+    if key != "foo" && key != "bar" {
+        return errors.New("unsupported key")
+    }
+    opts[key] = append(opts[key], value)
+    return nil
+}
+
+opts := make(map[string][]string)
+err := tagparser.ParseFunc(`foo,bar:xx,bar:yy`, callback)
+// opts == map[string][]string{"foo": {""}, "bar": {"xx", "yy"}}
+
+clear(opts)
+err = tagparser.ParseNameFunc(`foo,bar:xx,bar:yy`, callback)
+// opts == map[string][]string{"": {"foo"}, "bar": {"xx", "yy"}}
+
+opts := make(map[string][]string)
+err = tagparser.ParseFunc(`foo,boz,bar:xx`, callback)
+// opts == map[string][]string{"foo": {""}, "boz": {""}, "bar": {"xx"}
+// err.Error() = "boz: unsupported key (at 5)"
+```
+
+
+Error handling
+--------------
+
+All errors returned are `*tagparser.Error`, providing a reasonable message and a string index of the error. The content of the error is not covered by compatibility guarantees.
+
+Note that you can simply ignore errors if you want; the parser still returns the best guess about the meaning of the tag.
 
 
 Why?
@@ -25,91 +81,31 @@ This library:
 * reports an error for incorrect tags (but also returns the best guess values, so you can ignore the error if you want);
 * has an option to not special-case the first item as a name;
 * has configuratable syntax features allowing either sane defaults or 100% vmihailenco/tagparser compatibility;
-* is a single ~250 LOC file — you can copy it into your project if you prefer not having a dependency;
+* is a single ~200 LOC file — you can copy it into your project if you prefer not having a dependency;
 * makes zero allocations when using `ParseFunc`, and only allocates the output map when using `ParseWithName` or `ParseWithoutName`;
 * has more tests and 100% test coverage;
 * in general, is engineered like a standard library package.
 
 
-Usage
------
-
-Install:
-
-    go get github.com/andreyvit/tagparser@latest
-
-Use `WithName` configuration and `ParseName` func for tags that treat the first item as a name:
-
-```go
-name, opts, err := tagparser.WithName.ParseName(`foo,bar,boz:fubar`)
-// name == "foo"
-// opts == map[string]string{"bar": "", "boz": "fubar"}
-```
-
-Use `WithoutName` configuration and `Parse` func for tags that don't need names:
-
-```go
-opts, err := tagparser.WithoutName.Parse(`foo,bar,boz:fubar`)
-// opts == map[string]string{"foo": "", "bar": "", "boz": "fubar"}
-```
-
-You can use `Parse` func and `WithoutName` configuration, too, getting the name as an empty key:
-
-```go
-opts, err := tagparser.WithName.Parse(`foo,bar,boz:fubar`)
-// opts == map[string]string{"": "foo", "bar": "", "boz": "fubar"}
-```
-
-Use `ParseFunc` for customized usage, zero allocations and even better error reporting:
-
-```go
-opts := make(map[string][]string)
-callback := func(key, value string) error {
-    if key != "foo" && key != "bar" {
-        return errors.New("unsupported key")
-    }
-    opts[key] = append(opts[key], value)
-    return nil
-}
-
-err := tagparser.WithoutName.ParseFunc(`foo,bar:xx,bar:yy`, callback)
-// opts == map[string][]string{"foo": {""}, "bar": {"xx", "yy"}}
-
-err = tagparser.WithName.ParseFunc(`foo,bar:xx,bar:yy`, callback)
-// opts == map[string][]string{"": {"foo"}, "bar": {"xx", "yy"}}
-
-err = tagparser.WithoutName.ParseFunc(`foo,boz,bar:xx`, callback)
-// opts == map[string][]string{"foo": {""}, "boz": {""}, "bar": {"xx"}
-// err.Error() = "boz: unsupported key (at 5)"
-```
-
-All errors returned are `*tagparser.Error`, providing the string index of the error.
-
-Note that you can simply ignore errors if you'd like; the parser still returns the best guess about the meaning of the tag.
-
-
 Tag syntax
 ----------
-
-We support everything that vmihailenco/tagparser supports, but some of it is beyond what we consider completely reasonable, so we allow you to enable only the features you want in a `tagparser.Configuration`.
-
-`tagparser.WithName` is a default configuration special-casing the initial item, and `tagparser.WithoutName` treats all items alike. These don't have any extra features enabled.
 
 Details of the syntax:
 
 * a tag is a list of comma-separated items;
 
-* an item is either a `key:value` pair or just a key;
+* an item is either a `key:value` pair or just a single string;
 
-* both keys and values can be bare words (`foo`) or single-quoted strings (`'foo: bar, boz and fubar'`);
+* both keys and values can be bare words (`foo: bar`) or single-quoted strings (`foo: 'bar: boz, buzz and fubar'`);
 
-* if `Configuration.AllowMiddleQuote` is enabled, you can use single quotes in the middle of the value and multiple times (`foo: bar' boz 'and' fubar'`) just like in Bash;
-
-* if `Configuration.AllowParenEscape` is enabled, values can also use matching parenthesis, square brackets or curly braces as quotes (`foo:bar(boz, 'fubar', fizbiz)`), which allow commas, colons and single quotes inside;
-
-* both keys and values can use a backslash to escape special characters (`foo\ bar`, `foo\:bar`, `foo\,bar`, `'foo\'n\'bar'`) and insert non-matching parenthesis (`foo:\(\{\[`); the escapes are processed and removed from the values (so `foo:\(\{\[` is returned as `map[string]string{"foo": "({["}``); you can escape any non-alphabetical characters;
+* both keys and values can use a backslash to escape special characters (`foo\ bar`, `foo\:bar`, `foo\,bar`, `'foo\'n\'bar'`); the escapes are processed and removed from the values (so `foo:\:\,\!` is returned as `map[string]string{"foo": ":,!"}`); you can escape any non-alphabetical characters;
 
 * non-escaped unquoted leading and trailing whitespace is trimmed from keys and values.
+
+We support most of what vmihailenco/tagparser does, except some of the more wild features we have removed:
+
+* removed support for treating nested parenthesis as quotes (`foo: bar(boz, 'buzz', fubar)`), you should quote the entire value instead (`foo: 'bar(boz, \'buzz\', fubar)'`);
+* removed ability to use single quotes inside values (`foo: bar',buzz and 'fubar`), you should quote the entire value instead (`foo: 'bar,buzz and fubar'`).
 
 
 Contributing

@@ -1,7 +1,6 @@
 // Package tagparser is a better, simpler parser of conventional struct field
-// tags, an alternative to the industry-standard vmihailenco/tagparser with a
-// more compact implementation, optional error reporting, and an optionally 100%
-// backwards compatible tag syntax.
+// tags, an alternative to vmihailenco/tagparser with a compact implementation,
+// optional error reporting, and saner compatible tag syntax.
 package tagparser
 
 import (
@@ -9,18 +8,6 @@ import (
 	"fmt"
 	"strings"
 	"unsafe"
-)
-
-type Configuration struct {
-	FirstItemIsName  bool
-	AllowParenEscape bool
-	AllowMiddleQuote bool
-}
-
-var (
-	WithName    = Configuration{FirstItemIsName: true}                                                 // WithName uses sane defaults and treats the first item as a name.
-	WithoutName = Configuration{FirstItemIsName: false}                                                // WithoutName uses sane defaults and treats the first item like any other.
-	VMihailenco = Configuration{FirstItemIsName: true, AllowParenEscape: true, AllowMiddleQuote: true} // VMihailenco matches the behavior of vmihailenco/tagparser.
 )
 
 // ErrDuplicateKey is returned as Error.Cause for duplicate tag keys.
@@ -59,11 +46,8 @@ func (e *Error) Unwrap() error {
 
 // ParseName parses a tag formatted as a name followed by keys and/or
 // key-value pairs. See ParseFunc for the full syntax.
-func (conf *Configuration) ParseName(tag string) (name string, opts map[string]string, err error) {
-	if !conf.FirstItemIsName {
-		panic("tagparser: ParseName requires a configuration with FirstItemIsName = true")
-	}
-	err = conf.ParseFunc(tag, func(key, value string) error {
+func ParseName(tag string) (name string, opts map[string]string, err error) {
+	err = ParseNameFunc(tag, func(key, value string) error {
 		if key == "" {
 			name = value
 		} else {
@@ -80,11 +64,11 @@ func (conf *Configuration) ParseName(tag string) (name string, opts map[string]s
 	return
 }
 
-// ParseWithName parses a tag formatted as a list of keys and/or key-value
+// v parses a tag formatted as a list of keys and/or key-value
 // pairs. See ParseFunc for the full syntax.
-func (conf *Configuration) Parse(tag string) (map[string]string, error) {
+func Parse(tag string) (map[string]string, error) {
 	var opts map[string]string
-	err := conf.ParseFunc(tag, func(key, value string) error {
+	err := ParseFunc(tag, func(key, value string) error {
 		if opts == nil {
 			opts = make(map[string]string)
 		}
@@ -123,7 +107,17 @@ func (conf *Configuration) Parse(tag string) (map[string]string, error) {
 //
 // The error, if present, is *Error. If your callback returns an error, it will
 // be wrapped in an Error with your error stored in Error.Cause.
-func (conf *Configuration) ParseFunc(tag string, callback func(key, value string) error) error {
+func ParseFunc(tag string, callback func(key, value string) error) error {
+	return parseFunc(tag, false, callback)
+}
+
+// ParseNameFunc is like ParseFunc, but treats the first item as name. See
+// ParseFunc for the full syntax.
+func ParseNameFunc(tag string, callback func(key, value string) error) error {
+	return parseFunc(tag, true, callback)
+}
+
+func parseFunc(tag string, firstItemIsName bool, callback func(key, value string) error) error {
 	var parseErr error
 	fail := func(i int, msg string, cause error) {
 		if parseErr == nil {
@@ -141,26 +135,26 @@ func (conf *Configuration) ParseFunc(tag string, callback func(key, value string
 		count++
 		var value, errMsg string
 		var errPos int
-		if count == 1 && conf.FirstItemIsName && !inValue {
+		if count == 1 && firstItemIsName && !inValue {
 			key = ""
 			keyStart = start
-			value, errMsg, errPos = conf.unquoteTrim(tag[start:i])
+			value, errMsg, errPos = unquoteTrim(tag[start:i])
 			if errMsg != "" {
 				fail(start+errPos, errMsg, nil)
 			}
 		} else {
 			if inValue {
-				key, errMsg, errPos = conf.unquoteTrim(key)
+				key, errMsg, errPos = unquoteTrim(key)
 				if errMsg != "" {
 					fail(keyStart+errPos, errMsg, nil)
 				}
-				value, errMsg, errPos = conf.unquoteTrim(tag[start:i])
+				value, errMsg, errPos = unquoteTrim(tag[start:i])
 				if errMsg != "" {
 					fail(start+errPos, errMsg, nil)
 				}
 			} else if start < i {
 				keyStart = start
-				key, errMsg, errPos = conf.unquoteTrim(tag[start:i])
+				key, errMsg, errPos = unquoteTrim(tag[start:i])
 				if errMsg != "" {
 					fail(start+errPos, errMsg, nil)
 				}
@@ -192,20 +186,11 @@ func (conf *Configuration) ParseFunc(tag string, callback func(key, value string
 	}
 
 	var quoteStart int = -1
-	var nesting int
 	for i := 0; i < n; i++ {
 		if quoteStart >= 0 {
 			switch tag[i] {
 			case '\'':
 				quoteStart = -1
-			case '\\':
-				i++
-				checkEscape(i)
-			}
-		} else if nesting > 0 {
-			switch tag[i] {
-			case ')', ']', '}':
-				nesting--
 			case '\\':
 				i++
 				checkEscape(i)
@@ -228,10 +213,6 @@ func (conf *Configuration) ParseFunc(tag string, callback func(key, value string
 				flush(i)
 				start = i + 1
 				inValue = false
-			case '(', '[', '{':
-				if conf.AllowParenEscape {
-					nesting++
-				}
 			}
 		}
 	}
@@ -248,7 +229,7 @@ var asciiSpace = [256]uint8{'\t': 1, '\n': 1, '\v': 1, '\f': 1, '\r': 1, ' ': 1}
 
 // unquoteTrim trims leading and trailing unescaped ASCII whitespace, processes
 // escape sequences within the string and removes single quotes.
-func (conf *Configuration) unquoteTrim(s string) (result string, parseErr string, errPos int) {
+func unquoteTrim(s string) (result string, parseErr string, errPos int) {
 	n := len(s)
 
 	var start int
@@ -267,7 +248,6 @@ func (conf *Configuration) unquoteTrim(s string) (result string, parseErr string
 
 	b := make([]byte, 0, n)
 	var inQuote bool
-	var nesting int
 	var quoteCount int
 mainLoop:
 	for i := start; i < end; i++ {
@@ -279,27 +259,15 @@ mainLoop:
 				i++
 			}
 			continue mainLoop
-		case '(', '[', '{':
-			if conf.AllowParenEscape {
-				nesting++
-			}
-		case ')', ']', '}':
-			if conf.AllowParenEscape && nesting > 0 {
-				nesting--
-			}
 		case '\'':
-			if nesting == 0 {
-				quoteCount++
-				if !conf.AllowMiddleQuote {
-					if quoteCount > 2 || (quoteCount == 1 && len(b) > 0) {
-						if parseErr == "" {
-							parseErr, errPos = "invalid quote", i
-						}
-					}
+			quoteCount++
+			if quoteCount > 2 || (quoteCount == 1 && len(b) > 0) {
+				if parseErr == "" {
+					parseErr, errPos = "invalid quote", i
 				}
-				inQuote = !inQuote
-				continue mainLoop
 			}
+			inQuote = !inQuote
+			continue mainLoop
 		}
 		b = append(b, c)
 	}
