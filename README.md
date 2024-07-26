@@ -82,7 +82,7 @@ This library:
 * has an option to not special-case the first item as a name;
 * has configuratable syntax features allowing either sane defaults or 100% vmihailenco/tagparser compatibility;
 * is a single ~200 LOC file — you can copy it into your project if you prefer not having a dependency;
-* makes zero allocations when using `ParseFunc`, and only allocates the output map when using `ParseWithName` or `ParseWithoutName`;
+* makes zero allocations when using `ParseFunc`, and only allocates the output map when using `ParseName` or `Parse`;
 * has more tests and 100% test coverage;
 * in general, is engineered like a standard library package.
 
