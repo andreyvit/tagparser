@@ -44,8 +44,8 @@ func (e *Error) Unwrap() error {
 	return e.Cause
 }
 
-// ParseName parses a tag formatted as a name followed by keys and/or
-// key-value pairs. See ParseFunc for the full syntax.
+// ParseName parses a tag treating the first item as a name. See ParseFunc for
+// the full syntax and details.
 func ParseName(tag string) (name string, opts map[string]string, err error) {
 	err = ParseNameFunc(tag, func(key, value string) error {
 		if key == "" {
@@ -64,8 +64,8 @@ func ParseName(tag string) (name string, opts map[string]string, err error) {
 	return
 }
 
-// v parses a tag formatted as a list of keys and/or key-value
-// pairs. See ParseFunc for the full syntax.
+// Parse parses a tag without special treatment of the first item. See ParseFunc
+// for the full syntax and details.
 func Parse(tag string) (map[string]string, error) {
 	var opts map[string]string
 	err := ParseFunc(tag, func(key, value string) error {
@@ -81,40 +81,55 @@ func Parse(tag string) (map[string]string, error) {
 	return opts, err
 }
 
+// ParseNameFunc is like ParseFunc, but treats the first item as a name. See
+// ParseFunc for the full syntax and details.
+func ParseNameFunc(tag string, callback func(key, value string) error) error {
+	return parseFunc(tag, true, callback)
+}
+
 // ParseFunc enumerates fields of a tag formatted as a list of keys and/or
 // key-value pairs, optionally preceeded by a name.
 //
-// The format of the tag is: `name,key1,key2:value2,key3,key4=value4` when
-// firstItemIsName is true, and a similar format without the name when
-// firstItemIsName is false.
+// The format of the tag for ParseFunc and Parse is:
 //
-// When firstItemIsName is true, the name is reported as a value with an empty
-// key. Note that if the first item is a key-value pair, no name will be
-// reported.
+//	key1,key2:value2,key3:'quoted, value',key4
 //
-// Keys and values can use single quotes to include special characters. In
-// addition, anything inside parentheses, square brackets, or curly braces is
-// treated as a single escaped value. You can use backslash escapes to escape
-// whitespace, slashes, quotes and parentheses.
+// The format of the tag for ParseNameFunc and ParseName is:
 //
-// Unescaped leading and trailing whitespace is trimmed from the keys and
-// values. You can use quotes or escapes to add leading and trailing whitespace.
-// Note that we're only processing ASCII whitespace, unlike strings.TrimSpace;
-// there seems to be no reason to handle Unicode whitespace within struct tags.
+//	name,key1,key2:value2,key3:'quoted, value',key4
 //
-// Empty key names are not allowed even if escaped with quotes. The empty key is
-// reserved for the name when firstItemIsName is true.
+// Tag syntax:
+//
+//  1. A tag is a list of comma-separated items.
+//
+//  2. An item is either a key:value pair or just a single string.
+//
+//  3. Both keys and values can be bare words (`foo: bar`) or single-quoted
+//     strings (`foo: 'bar: boz, buzz and fubar'`).
+//
+//  4. Both keys and values can use a backslash to escape special characters
+//     (`foo\ bar`, `foo\:bar`, `foo\,bar`, `'foo\'n\'bar'`); the escapes are
+//     processed and removed from the values (so `foo:\:\,\!` is returned as
+//     `map[string]string{"foo": ":,!"}`); you can escape any non-alphabetical
+//     characters;
+//
+//  5. Non-escaped unquoted leading and trailing ASCII whitespace is trimmed
+//     from keys and values. (There seems to be no reason to handle Unicode
+//     whitespace within struct tags.)
+//
+//  6. ParseName and ParseNameFunc give special treatment to the first item of
+//     the tag if it does not have a colon. Such an item is returned as a name
+//     output parameter by ParseName / as a value with an empty key by
+//     ParseNameFunc. If the first item does have a colon, it is treated as a
+//     normal key; ParseName returns an empty name, and Parse reports a normal
+//     item and does not report an item with an empty key.
+//
+//  7. For normal items, empty key names are not allowed.
 //
 // The error, if present, is *Error. If your callback returns an error, it will
 // be wrapped in an Error with your error stored in Error.Cause.
 func ParseFunc(tag string, callback func(key, value string) error) error {
 	return parseFunc(tag, false, callback)
-}
-
-// ParseNameFunc is like ParseFunc, but treats the first item as name. See
-// ParseFunc for the full syntax.
-func ParseNameFunc(tag string, callback func(key, value string) error) error {
-	return parseFunc(tag, true, callback)
 }
 
 func parseFunc(tag string, firstItemIsName bool, callback func(key, value string) error) error {
@@ -241,6 +256,8 @@ func unquoteTrim(s string) (result string, parseErr string, errPos int) {
 	for end > start && asciiSpace[s[end-1]] != 0 {
 		end--
 	}
+	// Note that end may have trimmed the final escaped space here. When we
+	// encounter a backslash at s[end-1] and end < n, we will output s[end].
 
 	if strings.IndexByte(s, '\\') < 0 && strings.IndexByte(s, '\'') < 0 {
 		return s[start:end], "", 0
