@@ -33,6 +33,7 @@ opts, err := tagparser.Parse(`foo,bar,boz:fubar`)
 Use `ParseFunc` or `ParseNameFunc` for customized usage, zero allocations and even better error reporting:
 
 ```go
+opts := make(map[string][]string)
 callback := func(key, value string) error {
     if key != "foo" && key != "bar" {
         return errors.New("unsupported key")
@@ -41,7 +42,6 @@ callback := func(key, value string) error {
     return nil
 }
 
-opts := make(map[string][]string)
 err := tagparser.ParseFunc(`foo,bar:xx,bar:yy`, callback)
 // opts == map[string][]string{"foo": {""}, "bar": {"xx", "yy"}}
 
@@ -49,7 +49,7 @@ clear(opts)
 err = tagparser.ParseNameFunc(`foo,bar:xx,bar:yy`, callback)
 // opts == map[string][]string{"": {"foo"}, "bar": {"xx", "yy"}}
 
-opts := make(map[string][]string)
+clear(opts)
 err = tagparser.ParseFunc(`foo,boz,bar:xx`, callback)
 // opts == map[string][]string{"foo": {""}, "boz": {""}, "bar": {"xx"}
 // err.Error() = "boz: unsupported key (at 5)"
