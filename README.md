@@ -79,12 +79,11 @@ Like everyone else, I've been using [vmihailenco/tagparser](https://github.com/v
 This library:
 
 * reports an error for incorrect tags (but also returns the best guess values, so you can ignore the error if you want);
-* has an option to not special-case the first item as a name;
-* has configuratable syntax features allowing either sane defaults or 100% vmihailenco/tagparser compatibility;
+* makes special-casing the first item as a name optional;
+* has a consistent syntax without unexpected features;
 * is a single ~200 LOC file — you can copy it into your project if you prefer not having a dependency;
 * makes zero allocations when using `ParseFunc`, and only allocates the output map when using `ParseName` or `Parse`;
-* has more tests and 100% test coverage;
-* in general, is engineered like a standard library package.
+* has more tests and 100% test coverage.
 
 
 Tag syntax
